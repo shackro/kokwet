@@ -127,18 +127,22 @@ class TicketScanRequest(BaseModel):
 
 def _ticket_encryption_key() -> bytes:
     configured_key = os.getenv("KOKWET_TICKET_ENCRYPTION_KEY")
+    key_env_name = "KOKWET_TICKET_ENCRYPTION_KEY"
+    if not configured_key:
+        configured_key = os.getenv("TICKET_ENCRYPTION_KEY")
+        key_env_name = "TICKET_ENCRYPTION_KEY"
     if configured_key:
         try:
             key = bytes.fromhex(configured_key)
         except ValueError as error:
             raise HTTPException(
                 status_code=503,
-                detail="KOKWET_TICKET_ENCRYPTION_KEY must be 64 hexadecimal characters.",
+                detail=f"{key_env_name} must be 64 hexadecimal characters.",
             ) from error
         if len(key) != 32:
             raise HTTPException(
                 status_code=503,
-                detail="KOKWET_TICKET_ENCRYPTION_KEY must decode to exactly 32 bytes.",
+                detail=f"{key_env_name} must decode to exactly 32 bytes.",
             )
         return key
 
