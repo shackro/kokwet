@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from app.catalog import (
     CheckoutLine,
     CheckoutRequest,
+    _ticket_encryption_key,
     checkout_cart as create_ticket_order,
     get_events,
     get_passes as get_catalog_passes,
@@ -36,6 +37,7 @@ from app.live import (
 from app.members import initialize_member_store, router as members_router
 from app.media import initialize_media_store, router as media_router
 from app.publishing import (
+    _activation_secret,
     initialize_publishing_store,
     record_super_admin_audit,
     router as publishing_router,
@@ -68,6 +70,8 @@ async def _expire_ticket_reservations_periodically() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    _ticket_encryption_key()
+    _activation_secret()
     initialize_culture_store()
     initialize_publishing_store()
     initialize_impact_store()

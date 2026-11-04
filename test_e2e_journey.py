@@ -4,7 +4,6 @@ import json
 import os
 import socket
 import sqlite3
-import stat
 import tempfile
 import threading
 import time
@@ -18,10 +17,11 @@ from pathlib import Path
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="kokwet-e2e-") as temp_dir:
         database_path = Path(temp_dir) / "journey.sqlite3"
-        os.environ.pop("KOKWET_STAFF_ACTIVATION_SECRET", None)
         os.environ.update(
             {
                 "KOKWET_DB_PATH": str(database_path),
+                "TICKET_ENCRYPTION_KEY": "11" * 32,
+                "KOKWET_STAFF_ACTIVATION_SECRET": "qa-only-staff-activation-secret-123",
                 "CULTURE_IP_HASH_SECRET": "isolated-qa-only-secret",
                 "KOKWET_STAFF_ADMIN_EMAIL": "qa-admin@example.test",
                 "KOKWET_STAFF_ADMIN_PASSWORD": "qa-only-password-1234",
@@ -101,6 +101,7 @@ def main() -> None:
         os.environ["KOKWET_DB_PATH"] = str(legacy_ticket_database)
         try:
             catalog.initialize_catalog_store()
+            assert not legacy_ticket_database.with_name("ticket-encryption.key").exists()
             with sqlite3.connect(legacy_ticket_database) as connection:
                 migrated_ticket = connection.execute(
                     """
@@ -947,9 +948,7 @@ def main() -> None:
             assert isinstance(moderator_invite, dict)
             assert len(moderator_invite["code"]) == 6
             activation_key_path = database_path.with_name("staff-activation.key")
-            assert activation_key_path.is_file()
-            assert len(activation_key_path.read_bytes()) >= 32
-            assert stat.S_IMODE(activation_key_path.stat().st_mode) == 0o600
+            assert not activation_key_path.exists()
             activation_payload = {
                 "phone": "0711111111",
                 "activation_code": f"{(int(moderator_invite['code']) + 1) % 1_000_000:06d}",

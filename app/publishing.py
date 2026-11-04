@@ -7,9 +7,7 @@ import os
 import re
 import secrets
 import sqlite3
-import stat
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
 from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
@@ -23,7 +21,6 @@ from app.constants import HOUSE_NAMES
 from app.culture import (
     _client_hash,
     _connect,
-    _database_path,
     _purge_expired,
     initialize_culture_store,
 )
@@ -207,47 +204,43 @@ def _normalize_staff_phone(value: str) -> str:
 
 def _activation_secret() -> bytes:
     configured_secret = os.getenv("KOKWET_STAFF_ACTIVATION_SECRET")
-    if configured_secret:
-        if len(configured_secret) < 32:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "KOKWET_STAFF_ACTIVATION_SECRET must be at least 32 characters "
-                    "in the backend environment."
-                ),
-            )
-        return configured_secret.encode()
-
-    key_path = _database_path().with_name("staff-activation.key")
-    key_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        file_descriptor = os.open(
-            key_path,
-            os.O_CREAT | os.O_EXCL | os.O_WRONLY,
-            0o600,
-        )
-    except FileExistsError:
-        pass
-    else:
-        with os.fdopen(file_descriptor, "wb") as key_file:
-            key_file.write(secrets.token_bytes(32))
-
-    key_stat = key_path.lstat()
-    if not stat.S_ISREG(key_stat.st_mode) or stat.S_IMODE(key_stat.st_mode) & 0o077:
+    if not configured_secret:
         raise HTTPException(
             status_code=503,
             detail=(
-                "The staff activation key file must be a regular file readable only "
-                "by the backend account (permissions 600)."
+                "KOKWET_STAFF_ACTIVATION_SECRET is required in the backend "
+                "environment and must be at least 32 characters."
             ),
         )
-    secret = key_path.read_bytes()
-    if len(secret) < 32:
+    if configured_secret.startswith("hex:"):
+        try:
+            secret = bytes.fromhex(configured_secret.removeprefix("hex:"))
+        except ValueError as error:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "A hex-encoded KOKWET_STAFF_ACTIVATION_SECRET must use "
+                    "the format hex:<64 hexadecimal characters>."
+                ),
+            ) from error
+        if len(secret) != 32:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "A hex-encoded KOKWET_STAFF_ACTIVATION_SECRET must decode "
+                    "to exactly 32 bytes."
+                ),
+            )
+        return secret
+    if len(configured_secret) < 32:
         raise HTTPException(
             status_code=503,
-            detail="The persisted staff activation key is invalid; contact the administrator.",
+            detail=(
+                "KOKWET_STAFF_ACTIVATION_SECRET must be at least 32 characters "
+                "in the backend environment."
+            ),
         )
-    return secret
+    return configured_secret.encode()
 
 
 def _activation_code_hash(phone: str, code: str) -> str:

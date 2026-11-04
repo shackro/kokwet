@@ -9,7 +9,6 @@ import smtplib
 import sqlite3
 import secrets
 import ssl
-import stat
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -25,7 +24,6 @@ from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.culture import (
-    _database_path,
     _connect,
     _initiate_stk_push,
     _mpesa_settings,
@@ -126,54 +124,35 @@ class TicketScanRequest(BaseModel):
 
 
 def _ticket_encryption_key() -> bytes:
-    configured_key = os.getenv("KOKWET_TICKET_ENCRYPTION_KEY")
-    key_env_name = "KOKWET_TICKET_ENCRYPTION_KEY"
+    configured_key = os.getenv("TICKET_ENCRYPTION_KEY")
+    key_env_name = "TICKET_ENCRYPTION_KEY"
     if not configured_key:
-        configured_key = os.getenv("TICKET_ENCRYPTION_KEY")
-        key_env_name = "TICKET_ENCRYPTION_KEY"
-    if configured_key:
-        try:
-            key = bytes.fromhex(configured_key)
-        except ValueError as error:
-            raise HTTPException(
-                status_code=503,
-                detail=f"{key_env_name} must be 64 hexadecimal characters.",
-            ) from error
-        if len(key) != 32:
-            raise HTTPException(
-                status_code=503,
-                detail=f"{key_env_name} must decode to exactly 32 bytes.",
-            )
-        return key
-
-    key_path = _database_path().with_name("ticket-encryption.key")
-    key_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        file_descriptor = os.open(
-            key_path,
-            os.O_CREAT | os.O_EXCL | os.O_WRONLY,
-            0o600,
-        )
-    except FileExistsError:
-        pass
-    else:
-        with os.fdopen(file_descriptor, "wb") as key_file:
-            key_file.write(secrets.token_bytes(32))
-
-    key_stat = key_path.lstat()
-    if not stat.S_ISREG(key_stat.st_mode) or stat.S_IMODE(key_stat.st_mode) & 0o077:
+        configured_key = os.getenv("KOKWET_TICKET_ENCRYPTION_KEY")
+        key_env_name = "KOKWET_TICKET_ENCRYPTION_KEY"
+    if not configured_key:
         raise HTTPException(
             status_code=503,
             detail=(
-                "The ticket encryption key must be a regular file readable only "
-                "by the backend account (permissions 600)."
+                "TICKET_ENCRYPTION_KEY is required in the backend environment "
+                "and must contain the existing ticket key."
             ),
         )
-    key = key_path.read_bytes()
+    if len(configured_key) != 64:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{key_env_name} must be 64 hexadecimal characters.",
+        )
+    try:
+        key = bytes.fromhex(configured_key)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{key_env_name} must be 64 hexadecimal characters.",
+        ) from error
     if len(key) != 32:
         raise HTTPException(
             status_code=503,
-            detail="The persisted ticket encryption key is invalid; contact the administrator.",
+            detail=f"{key_env_name} must decode to exactly 32 bytes.",
         )
     return key
 
